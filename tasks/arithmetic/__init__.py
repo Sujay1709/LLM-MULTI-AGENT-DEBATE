@@ -1,0 +1,2 @@
+"""Synthetic arithmetic task."""
+
