@@ -41,6 +41,15 @@ The shared package is under `src/multiagent_debate`. Each folder under `tasks` c
 adapter, prompt, parser choice, and thin command-line entry points. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the data flow and extension points.
 
+## Research grounding
+
+The project is informed by both positive and critical results in the multi-agent debate literature.
+The critical work matters: strong single-agent prompting and self-consistency can sometimes match or
+beat debate at lower cost, while model and role diversity can matter more than simply adding agents.
+See [`docs/RELATED_WORK.md`](docs/RELATED_WORK.md) for an annotated reading list, implications for
+experimental design, and three prioritized engineering extensions. Reusable BibTeX entries are in
+[`references.bib`](references.bib).
+
 ## Setup
 
 Python 3.11 through 3.14 is supported.
@@ -218,4 +227,3 @@ other AI answers, while measuring whether the improvement is worth the extra tim
 ```
 
 The project code is MIT licensed. GSM8K and MMLU retain their respective dataset terms and citations.
-
