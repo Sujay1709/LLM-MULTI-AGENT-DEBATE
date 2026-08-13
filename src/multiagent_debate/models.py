@@ -45,11 +45,16 @@ class DebateConfig:
     seed: int = 0
     limit: int = 10
     aggregation: Literal["majority", "paired"] = "majority"
+    baseline_strategies: tuple[str, ...] = ()
     max_retries: int = 3
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        # Omitting the new empty field preserves experiment IDs for pre-1.1 resumable runs.
+        if not self.baseline_strategies:
+            value.pop("baseline_strategies")
+        return value
 
 
 @dataclass(slots=True)
@@ -61,4 +66,3 @@ class Example:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

@@ -9,6 +9,8 @@ python run.py --model openai/gpt-5-mini
 python evaluate.py
 ```
 
+Add `--baselines all` to the run command for self-refinement and compute-matched self-consistency.
+The evaluator writes both `summary.csv` and paired `comparisons.csv`.
+
 The download script records the Hugging Face dataset fingerprint. `--limit 0` runs all 1,319 test
 examples and can create substantial API cost with three agents and two rounds.
-

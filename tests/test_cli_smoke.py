@@ -20,6 +20,8 @@ def test_arithmetic_cli_smoke(tmp_path) -> None:
             "2",
             "--output-dir",
             str(tmp_path),
+            "--baselines",
+            "all",
         ],
         cwd=ROOT / "tasks" / "arithmetic",
         env=env,
@@ -30,4 +32,4 @@ def test_arithmetic_cli_smoke(tmp_path) -> None:
     results = next(tmp_path.glob("*/results.jsonl"))
     assert len(read_jsonl(results)) == 2
     assert results.with_name("summary.csv").exists()
-
+    assert results.with_name("comparisons.csv").exists()

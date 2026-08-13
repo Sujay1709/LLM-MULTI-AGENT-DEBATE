@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from multiagent_debate.cli import add_run_arguments
+from multiagent_debate.cli import add_baseline_arguments, add_run_arguments, baseline_strategies
 from multiagent_debate.clients import make_client
 from multiagent_debate.evaluation import evaluate_objective
 from multiagent_debate.models import DebateConfig, Example
@@ -37,6 +37,7 @@ def load_examples(data_dir: Path) -> tuple[list[Example], str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_run_arguments(parser, default_agents=3, default_rounds=2)
+    add_baseline_arguments(parser)
     parser.add_argument("--data-dir", type=Path, default=Path("data/gsm8k"))
     parser.add_argument("--no-evaluate", action="store_true")
     args = parser.parse_args()
@@ -50,6 +51,7 @@ def main() -> None:
         max_tokens=args.max_tokens,
         seed=args.seed,
         limit=args.limit,
+        baseline_strategies=baseline_strategies(args.baselines),
         max_retries=args.max_retries,
         metadata={"dataset": "openai/gsm8k", "configuration": "main", "fingerprint": fingerprint},
     )
@@ -65,8 +67,8 @@ def main() -> None:
     if not args.no_evaluate:
         evaluate_objective(results)
         print(f"Summary: {results.with_name('summary.csv').resolve()}")
+        print(f"Comparisons: {results.with_name('comparisons.csv').resolve()}")
 
 
 if __name__ == "__main__":
     main()
-

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import random
 from collections import defaultdict
 from collections.abc import Sequence
 from pathlib import Path
@@ -28,16 +30,33 @@ def _strategy_usage(record: dict[str, Any], strategy: str) -> tuple[int, float, 
     if strategy == "direct":
         generation = record["agents"][0]["turns"][0]["response"]
         return _generation_usage(generation)
-    tokens = 0
-    latency = 0.0
-    cost = 0.0
-    for agent in record["agents"]:
-        for turn in agent["turns"]:
-            values = _generation_usage(turn["response"])
-            tokens += values[0]
-            latency += values[1]
-            cost += values[2]
-    return tokens, latency, cost
+
+    generations: list[dict[str, Any]] = []
+    if strategy == "self_consistency":
+        generations = [agent["turns"][0]["response"] for agent in record["agents"]]
+    elif strategy == "self_refinement":
+        generations = [record["agents"][0]["turns"][0]["response"]]
+        baseline = record.get("baselines", {}).get(strategy, {})
+        generations.extend(turn["response"] for turn in baseline.get("revision_turns", []))
+    elif strategy == "budget_matched_self_consistency":
+        generations = [agent["turns"][0]["response"] for agent in record["agents"]]
+        baseline = record.get("baselines", {}).get(strategy, {})
+        generations.extend(turn["response"] for turn in baseline.get("additional_samples", []))
+    else:
+        maximum_round: int | None = None
+        if strategy.startswith("debate_round_"):
+            maximum_round = int(strategy.rsplit("_", 1)[1]) - 1
+        for agent in record["agents"]:
+            for turn in agent["turns"]:
+                if maximum_round is None or int(turn["round"]) <= maximum_round:
+                    generations.append(turn["response"])
+
+    usage = [_generation_usage(generation) for generation in generations]
+    return (
+        sum(item[0] for item in usage),
+        sum(item[1] for item in usage),
+        sum(item[2] for item in usage),
+    )
 
 
 def _canonical_reference(reference: Any, task: str) -> str | None:
@@ -48,24 +67,77 @@ def _canonical_reference(reference: Any, task: str) -> str | None:
     return str(reference)
 
 
+def _strategy_names(records: Sequence[dict[str, Any]]) -> list[str]:
+    names = ["direct", "self_consistency"]
+    optional = ["self_refinement", "budget_matched_self_consistency"]
+    for name in optional:
+        if any(name in record.get("predictions", {}) for record in records):
+            names.append(name)
+
+    max_rounds = max(
+        (len(record.get("predictions", {}).get("rounds", [])) for record in records),
+        default=0,
+    )
+    names.extend(f"debate_round_{round_number}" for round_number in range(2, max_rounds))
+    names.append("debate")
+    return names
+
+
+def _strategy_prediction(record: dict[str, Any], strategy: str) -> str | None:
+    if strategy == "self_consistency":
+        saved = record.get("predictions", {}).get(strategy)
+        if saved is not None:
+            return saved
+        rounds = record.get("predictions", {}).get("rounds", [])
+        return rounds[0].get("selected_answer") if rounds else None
+    if strategy.startswith("debate_round_"):
+        round_index = int(strategy.rsplit("_", 1)[1]) - 1
+        rounds = record.get("predictions", {}).get("rounds", [])
+        if round_index >= len(rounds):
+            return None
+        return rounds[round_index].get("selected_answer")
+    return record.get("predictions", {}).get(strategy)
+
+
+def _strategy_tie(record: dict[str, Any], strategy: str) -> bool:
+    if strategy == "self_consistency":
+        rounds = record.get("predictions", {}).get("rounds", [])
+        return bool(rounds and rounds[0].get("tie"))
+    if strategy == "budget_matched_self_consistency":
+        return bool(record.get("baselines", {}).get(strategy, {}).get("tie"))
+    if strategy.startswith("debate_round_"):
+        round_index = int(strategy.rsplit("_", 1)[1]) - 1
+        rounds = record.get("predictions", {}).get("rounds", [])
+        return bool(round_index < len(rounds) and rounds[round_index].get("tie"))
+    if strategy == "debate":
+        return bool(record.get("predictions", {}).get("tie"))
+    return False
+
+
+def _is_correct(record: dict[str, Any], strategy: str) -> bool:
+    prediction = _strategy_prediction(record, strategy)
+    reference = _canonical_reference(record["reference"], record["task"])
+    return prediction is not None and str(prediction) == str(reference)
+
+
 def _objective_rows(
-    records: Sequence[dict[str, Any]], label: str = "overall"
+    records: Sequence[dict[str, Any]],
+    strategies: Sequence[str],
+    label: str = "overall",
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    strategies = ["direct", "debate"]
     for strategy in strategies:
         scored = correct = parse_failures = ties = total_tokens = 0
         total_latency = total_cost = 0.0
         for record in records:
-            prediction = record["predictions"].get(strategy)
+            prediction = _strategy_prediction(record, strategy)
             reference = _canonical_reference(record["reference"], record["task"])
             if prediction is None:
                 parse_failures += 1
             else:
                 scored += 1
                 correct += int(str(prediction) == str(reference))
-            if strategy == "debate":
-                ties += int(bool(record["predictions"].get("tie")))
+            ties += int(_strategy_tie(record, strategy))
             usage = _strategy_usage(record, strategy)
             total_tokens += usage[0]
             total_latency += usage[1]
@@ -78,6 +150,7 @@ def _objective_rows(
                 "scored": scored,
                 "correct": correct,
                 "accuracy": correct / scored if scored else 0.0,
+                "accuracy_all": correct / len(records) if records else 0.0,
                 "parse_failures": parse_failures,
                 "ties": ties,
                 "total_tokens": total_tokens,
@@ -88,24 +161,150 @@ def _objective_rows(
     return rows
 
 
+def paired_bootstrap_difference(
+    baseline: Sequence[bool],
+    candidate: Sequence[bool],
+    *,
+    samples: int = 2000,
+    confidence_level: float = 0.95,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Return a percentile interval for paired accuracy(candidate) - accuracy(baseline)."""
+    if len(baseline) != len(candidate) or not baseline:
+        raise ValueError("Paired bootstrap inputs must have the same non-zero length")
+    if samples < 1:
+        raise ValueError("Bootstrap samples must be at least one")
+    if not 0.0 < confidence_level < 1.0:
+        raise ValueError("Confidence level must be between zero and one")
+
+    differences = [int(right) - int(left) for left, right in zip(baseline, candidate, strict=True)]
+    rng = random.Random(seed)
+    size = len(differences)
+    estimates = sorted(
+        sum(differences[rng.randrange(size)] for _ in range(size)) / size
+        for _ in range(samples)
+    )
+    tail = (1.0 - confidence_level) / 2.0
+    low_index = max(0, math.floor(tail * (samples - 1)))
+    high_index = min(samples - 1, math.ceil((1.0 - tail) * (samples - 1)))
+    return estimates[low_index], estimates[high_index]
+
+
+def mcnemar_exact(baseline: Sequence[bool], candidate: Sequence[bool]) -> tuple[int, int, float]:
+    """Return discordant counts and the exact two-sided McNemar p-value."""
+    if len(baseline) != len(candidate):
+        raise ValueError("McNemar inputs must have the same length")
+    baseline_only = sum(left and not right for left, right in zip(baseline, candidate, strict=True))
+    candidate_only = sum(
+        right and not left for left, right in zip(baseline, candidate, strict=True)
+    )
+    discordant = baseline_only + candidate_only
+    if discordant == 0:
+        return baseline_only, candidate_only, 1.0
+
+    cutoff = min(baseline_only, candidate_only)
+    log_probabilities = [
+        math.lgamma(discordant + 1)
+        - math.lgamma(index + 1)
+        - math.lgamma(discordant - index + 1)
+        - discordant * math.log(2.0)
+        for index in range(cutoff + 1)
+    ]
+    maximum = max(log_probabilities)
+    cumulative = math.exp(maximum) * sum(
+        math.exp(value - maximum) for value in log_probabilities
+    )
+    return baseline_only, candidate_only, min(1.0, 2.0 * cumulative)
+
+
+def _comparison_rows(
+    records: Sequence[dict[str, Any]],
+    strategies: Sequence[str],
+    *,
+    label: str,
+    bootstrap_samples: int,
+    confidence_level: float,
+) -> list[dict[str, Any]]:
+    baseline = [_is_correct(record, "direct") for record in records]
+    rows: list[dict[str, Any]] = []
+    for strategy in strategies:
+        if strategy == "direct":
+            continue
+        candidate = [_is_correct(record, strategy) for record in records]
+        low, high = paired_bootstrap_difference(
+            baseline,
+            candidate,
+            samples=bootstrap_samples,
+            confidence_level=confidence_level,
+        )
+        baseline_only, candidate_only, p_value = mcnemar_exact(baseline, candidate)
+        rows.append(
+            {
+                "group": label,
+                "baseline": "direct",
+                "strategy": strategy,
+                "n": len(records),
+                "baseline_correct": sum(baseline),
+                "strategy_correct": sum(candidate),
+                "accuracy_difference": mean(candidate) - mean(baseline),
+                "confidence_level": confidence_level,
+                "bootstrap_ci_low": low,
+                "bootstrap_ci_high": high,
+                "mcnemar_baseline_only": baseline_only,
+                "mcnemar_strategy_only": candidate_only,
+                "mcnemar_p_value": p_value,
+            }
+        )
+    return rows
+
+
 def evaluate_objective(
     results_path: str | Path,
     *,
     summary_path: str | Path | None = None,
+    comparisons_path: str | Path | None = None,
     group_by: str | None = None,
+    bootstrap_samples: int = 2000,
+    confidence_level: float = 0.95,
 ) -> list[dict[str, Any]]:
     records = read_jsonl(results_path)
-    rows = _objective_rows(records)
+    if not records:
+        raise ValueError("Cannot evaluate an empty results file")
+    strategies = _strategy_names(records)
+    rows = _objective_rows(records, strategies)
+    comparison_rows = _comparison_rows(
+        records,
+        strategies,
+        label="overall",
+        bootstrap_samples=bootstrap_samples,
+        confidence_level=confidence_level,
+    )
     if group_by:
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in records:
             grouped[str(record.get("metadata", {}).get(group_by, "unknown"))].append(record)
         for label in sorted(grouped):
-            rows.extend(_objective_rows(grouped[label], label=label))
+            group_records = grouped[label]
+            rows.extend(_objective_rows(group_records, strategies, label=label))
+            comparison_rows.extend(
+                _comparison_rows(
+                    group_records,
+                    strategies,
+                    label=label,
+                    bootstrap_samples=bootstrap_samples,
+                    confidence_level=confidence_level,
+                )
+            )
     destination = (
         Path(summary_path) if summary_path else Path(results_path).with_name("summary.csv")
     )
     write_csv(destination, rows)
+    comparison_destination = (
+        Path(comparisons_path)
+        if comparisons_path
+        else Path(results_path).with_name("comparisons.csv")
+    )
+    write_csv(comparison_destination, comparison_rows)
     return rows
 
 

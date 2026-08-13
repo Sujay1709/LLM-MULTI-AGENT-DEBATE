@@ -3,7 +3,11 @@ import csv
 import pytest
 
 from multiagent_debate.clients import FakeClient
-from multiagent_debate.evaluation import evaluate_objective
+from multiagent_debate.evaluation import (
+    evaluate_objective,
+    mcnemar_exact,
+    paired_bootstrap_difference,
+)
 from multiagent_debate.io import read_jsonl
 from multiagent_debate.models import DebateConfig, Example
 from multiagent_debate.parsing import parse_numeric_answer
@@ -19,6 +23,7 @@ def test_incremental_output_resume_and_objective_summary(tmp_path) -> None:
         num_rounds=1,
         limit=2,
     )
+    assert "baseline_strategies" not in config.to_dict()
     client = FakeClient(responses=["\\boxed{0}", "\\boxed{1}"])
     results = run_experiment(
         examples,
@@ -63,6 +68,30 @@ def test_incremental_output_resume_and_objective_summary(tmp_path) -> None:
         )
 
     rows = evaluate_objective(results)
-    assert {row["strategy"] for row in rows} == {"direct", "debate"}
+    assert {row["strategy"] for row in rows} == {
+        "direct",
+        "self_consistency",
+        "debate",
+    }
     with results.with_name("summary.csv").open(newline="", encoding="utf-8") as handle:
+        assert len(list(csv.DictReader(handle))) == 3
+    with results.with_name("comparisons.csv").open(newline="", encoding="utf-8") as handle:
         assert len(list(csv.DictReader(handle))) == 2
+
+
+def test_paired_bootstrap_and_exact_mcnemar() -> None:
+    baseline = [True, True, False, False]
+    candidate = [True, False, True, True]
+    low, high = paired_bootstrap_difference(
+        baseline,
+        candidate,
+        samples=500,
+        seed=7,
+    )
+    assert low <= 0.25 <= high
+    baseline_only, candidate_only, p_value = mcnemar_exact(baseline, candidate)
+    assert (baseline_only, candidate_only) == (1, 2)
+    assert p_value == pytest.approx(1.0)
+
+    _, _, directional_p = mcnemar_exact([True] * 5, [False] * 5)
+    assert directional_p == pytest.approx(0.0625)

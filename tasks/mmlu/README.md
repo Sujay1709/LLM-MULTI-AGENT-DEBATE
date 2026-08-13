@@ -9,6 +9,9 @@ python run.py --model openai/gpt-5-mini --subject machine_learning
 python evaluate.py
 ```
 
+Add `--baselines all` to test self-refinement and compute-matched self-consistency. Statistical
+comparisons are reported overall and per subject; small subject groups should not be interpreted as
+conclusive.
+
 Omit `--subject` to sample across all subjects. The summary contains overall and per-subject rows.
 This harness is zero-shot by design; it does not reproduce MMLU's separate five-shot protocol.
-

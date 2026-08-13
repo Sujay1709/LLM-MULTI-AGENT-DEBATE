@@ -29,6 +29,16 @@ def peer_review_prompt(
     )
 
 
+def self_refinement_prompt(original_prompt: str, *, answer_instruction: str) -> str:
+    """Ask one agent to inspect its own answer without introducing peer evidence."""
+    return (
+        "Privately audit your previous solution. Recompute or re-check each important step, "
+        "identify any unsupported assumption, and revise the answer only when justified. Do not "
+        "assume the previous answer is correct.\n\n"
+        f"Original task:\n{original_prompt}\n\n{answer_instruction}"
+    )
+
+
 def biography_judge_prompt(name: str, facts: Sequence[str], biography: str) -> str:
     return f"""You are evaluating a generated biography against a closed reference set.
 
@@ -62,4 +72,3 @@ Return JSON only. Preserve its intended classifications and do not add new factu
 Validation error: {error}
 Malformed output:
 {malformed}"""
-

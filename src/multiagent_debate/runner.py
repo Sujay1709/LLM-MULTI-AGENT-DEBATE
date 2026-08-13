@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from .baselines import validate_baseline_strategies
 from .clients import LLMClient
 from .engine import AnswerParser, run_debate
 from .io import append_jsonl, completed_ids, create_run_directory, experiment_id
@@ -27,6 +28,7 @@ def run_experiment(
 ) -> Path:
     if config.num_agents < 1 or config.num_rounds < 1:
         raise ValueError("num_agents and num_rounds must both be at least one")
+    validate_baseline_strategies(config)
 
     if resume:
         run_dir = Path(resume)

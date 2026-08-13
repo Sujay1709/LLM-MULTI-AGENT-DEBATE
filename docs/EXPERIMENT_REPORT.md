@@ -23,10 +23,22 @@
 | Strategy | N | Accuracy/F1 | Parse failures | Tokens | Mean latency | Cost |
 |---|---:|---:|---:|---:|---:|---:|
 | Direct | | | | | | |
+| Self-consistency | | | | | | |
+| Self-refinement | | | | | | |
+| Budget-matched self-consistency | | | | | | |
 | Debate | | | | | | |
 
-Report an uncertainty interval for the paired metric difference on serious runs. Include at least five
-qualitative cases: two improvements, two regressions, and one disagreement/tie.
+## Paired comparisons
+
+| Candidate vs direct | Accuracy difference | 95% paired CI | McNemar discordant pairs | Exact p-value |
+|---|---:|---:|---:|---:|
+| Self-consistency | | | | |
+| Self-refinement | | | | |
+| Budget-matched self-consistency | | | | |
+| Debate | | | | |
+
+Pre-register one primary comparison for serious runs. Include at least five qualitative cases: two
+improvements, two regressions, and one disagreement/tie.
 
 ## Threats to validity
 
@@ -39,4 +51,3 @@ qualitative cases: two improvements, two regressions, and one disagreement/tie.
 ## Conclusion
 
 State what the data supports, what it does not support, and the next falsifiable experiment.
-
