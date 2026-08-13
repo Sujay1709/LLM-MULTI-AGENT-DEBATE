@@ -83,6 +83,12 @@ permanent recommendation.
 Every runner defaults to 10 seeded examples. Use `--limit 0` only after estimating the number of API
 calls: roughly `examples × agents × rounds`.
 
+For an experiment with stronger controls, add `--baselines all` to an objective-task runner. This
+adds private self-refinement and compute-matched independent sampling; first-round self-consistency
+is always reported without extra calls. Start with `fake/deterministic` or a small `--limit` because
+these optional baselines increase live-provider usage. See
+[`docs/STATISTICAL_EVALUATION.md`](docs/STATISTICAL_EVALUATION.md) for call counts and interpretation.
+
 ### Arithmetic
 
 ```bash
@@ -141,6 +147,7 @@ sample of judgments.
 --seed N            sampling seed and provider seed when supported
 --temperature X     sampling temperature
 --max-tokens N      response token ceiling
+--baselines NAME    optional self-refinement/compute-matched controls (objective tasks)
 --output-dir PATH   base directory for timestamped runs
 --resume RUN_DIR    skip example IDs already present in that run's JSONL
 ```
@@ -158,7 +165,8 @@ Each run creates `outputs/<timestamp>_<task>_<model>_<experiment-id>/`:
 ```text
 config.json                  immutable run configuration and dataset metadata
 results.jsonl                one complete, append-only record per example
-summary.csv                  direct/debate metrics and efficiency statistics
+summary.csv                  per-strategy quality and efficiency statistics
+comparisons.csv              paired confidence intervals and exact McNemar tests
 biography_judgments.jsonl    biography judge evidence (biography task only)
 ```
 
@@ -167,13 +175,18 @@ round-level normalized answers, the direct and debate predictions, token/latency
 the provider exposes it, parse status, and recoverable errors. JSONL is flushed after every example,
 so an interrupted job can be resumed without repeating completed IDs.
 
+For objective tasks, `summary.csv` includes direct reasoning, first-round self-consistency, optional
+self-refinement and compute-matched self-consistency, intermediate debate rounds, and final debate.
+`comparisons.csv` treats parse failures as incorrect and compares each strategy with the same direct
+examples using a seeded paired bootstrap interval and an exact two-sided McNemar test.
+
 ## Interpreting results responsibly
 
 - Debate uses more inference calls than a direct answer. Report accuracy and cost/latency together.
 - API sampling is not perfectly deterministic even when a provider accepts a seed.
 - A majority can amplify a shared misconception; agreement is not evidence of truth.
 - The direct baseline is one agent's first response. Final majority voting also benefits from multiple
-  samples, so consider reporting round-zero majority as a self-consistency control in follow-up work.
+  samples, so the evaluator reports round-zero majority as a self-consistency control.
 - LLM judges can favor their own model family and can misunderstand the reference. Audit judgments.
 - Small 10-item runs are smoke tests, not statistically persuasive benchmark results.
 

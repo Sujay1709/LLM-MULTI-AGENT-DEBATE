@@ -52,7 +52,7 @@ Accordingly, published experiment reports should include:
 
 ## Three high-value engineering extensions
 
-These are proposed features, not current capabilities.
+The first two are the research roadmap; the baseline/statistics portion of item 2 is implemented.
 
 ### 1. Heterogeneous agents and calibrated confidence
 
@@ -63,12 +63,12 @@ on held-out examples, and compare majority vote with confidence-weighted consens
 **Portfolio signal:** provider abstraction, schema validation, calibration, ablation design, and
 cost-aware orchestration.
 
-### 2. Strong baselines and statistical experiment analysis
+### 2. Strong baselines and statistical experiment analysis (partially implemented)
 
-Add chain-of-thought, self-refinement, and token-budget-matched self-consistency runners. Produce
-paired bootstrap confidence intervals, McNemar tests for objective tasks, effect sizes, and
-accuracy-versus-cost Pareto plots. Store environment, model, prompt, and dataset versions with every
-report.
+The rationale-requesting direct prompt, round-zero self-consistency, self-refinement, and
+generation-call-budget-matched self-consistency are now reported with paired bootstrap confidence
+intervals and exact McNemar tests. Exact token matching, accuracy-versus-cost Pareto plots, and more
+complete environment snapshots remain future work.
 
 **Portfolio signal:** the project evaluates whether a technique works instead of showcasing only
 successful examples—a major distinction between an API demo and research engineering.
@@ -85,6 +85,6 @@ safe deployment without exposing API keys or creating an unlimited public infere
 
 ## Suggested implementation order
 
-Implement the strong baselines and statistical analysis first, heterogeneous agents second, and the
-read-only explorer third. That order creates trustworthy results before building the presentation
+Complete the remaining experiment visualization, implement heterogeneous agents next, and build the
+read-only explorer third. That order creates trustworthy results before expanding the presentation
 layer.
